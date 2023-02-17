@@ -1,0 +1,140 @@
+#!/bin/sh
+#
+. ./shflags
+#
+#
+BOLD="$(tput bold 2>/dev/null || printf '')"
+GREY="$(tput setaf 0 2>/dev/null || printf '')"
+UNDERLINE="$(tput smul 2>/dev/null || printf '')"
+RED="$(tput setaf 1 2>/dev/null || printf '')"
+GREEN="$(tput setaf 2 2>/dev/null || printf '')"
+YELLOW="$(tput setaf 3 2>/dev/null || printf '')"
+BLUE="$(tput setaf 4 2>/dev/null || printf '')"
+MAGENTA="$(tput setaf 5 2>/dev/null || printf '')"
+NO_COLOR="$(tput sgr0 2>/dev/null || printf '')"
+
+check_if_is_installed() {
+  if ! command -v $1 &> /dev/null; then
+    error "Dependency '$1' is not installed or is not listed in '\$PATH'"
+    exit 1
+  fi
+}
+
+get_package_manager() {
+  if command -v apt &> /dev/null; then
+    echo "apt"
+  elif command -v dnf &> /dev/null; then
+    echo "dnf"
+  # elif command -v yum &> /dev/null; then
+  #   echo "yum"
+  elif command -v pacman &> /dev/null; then
+    echo "pacman"
+  elif command -v brew &> /dev/null; then
+    echo "brew"
+  else
+    error "No supported package manager were found to install dependencies."
+    exit 1
+  fi
+}
+
+get_os() {
+  source /etc/os-release
+  # echo "$NAME $VERSION"
+  info "$NAME"
+}
+
+run_command_and_print_output() {
+  # eval $0
+  local output=$(eval $0)
+
+  # if test "$0" -ne "0"; then
+  #   echo "Failed to run '$0'"
+  #   exit 1
+  # fi
+
+  echo $output
+  # echo "Return $0"
+}
+
+info() {
+  printf '%s\n' "${BOLD}${GREY}>${NO_COLOR} $*"
+}
+
+warn() {
+  printf '%s\n' "${YELLOW}! $*${NO_COLOR}"
+}
+
+error() {
+  printf '%s\n' "${RED}x $*${NO_COLOR}" >&2
+}
+
+success() {
+  printf '%s\n' "${GREEN}✓${NO_COLOR} $*"
+}
+
+elevate_priv() {
+  if ! check_if_is_installed sudo; then
+    error 'Could not find the command "sudo", needed to get permissions for install.'
+    info "Please run this script as root, or install sudo."
+    exit 1
+  fi
+  if ! sudo -v; then
+    error "Superuser not granted, aborting installation"
+    exit 1
+  fi
+}
+
+# Gets path to a temporary directory
+get_tmp_dir() {
+  if has mktemp; then
+    echo $(mktemp -d)
+  else
+    # No really good options here--let's pick a default + hope
+    echo "/tmp/"
+  fi
+}
+
+has() {
+  command -v "$1" 1>/dev/null 2>&1
+}
+
+print_box() {
+  printf "\n"
+  local s="$*"
+  tput setaf 3
+  echo "----------------${s//?/-}----------------
+               $(tput setaf 4)$s$(tput setaf 3)
+----------------${s//?/-}----------------"
+  tput sgr 0
+}
+
+is_macos() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_shell() {
+  echo "$(basename "$SHELL")"
+}
+
+export_to_path() {
+  local DIR=$0
+
+  case "$(get_shell)" in
+    "fish") echo "set -gx PATH ${DIR} \"${DIR}\"" >> $HOME/.config/fish/config.fish
+    ;;
+    "bash") echo "export PATH=${DIR}:${PATH}" >> $HOME/.bashrc
+    ;;
+    "zsh") echo "export PATH=${DIR}:${PATH}" >> $HOME/.zshrc
+    ;;
+    *) echo default
+    ;;
+  esac
+}
+
+print_empty_line() {
+  printf "\n"
+}
