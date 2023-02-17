@@ -1,0 +1,66 @@
+#!/bin/sh
+
+set -e
+
+# source file utils
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+source "$SCRIPT_DIR/utils"
+
+main() {
+  elevate_priv
+
+  if has brew; then
+    install_using_brew
+  fi
+
+  if has apt; then
+    install_using_apt
+  fi
+
+  if has dnf; then
+    install_using_dnf
+  fi
+
+  if has git; then
+    install_using_git
+  fi
+
+  error "Did not found any way to install 'usbmuxd'"
+  print_empty_line
+  info "Install 'git' or export it to '\$PATH' and try again."
+  info "Feel free to try installing manually: https://github.com/libimobiledevice/usbmuxd"
+}
+
+install_using_apt() {
+  sudo apt-get -y install usbmuxd
+  exit $?
+}
+
+install_using_dnf() {
+  sudo dnf install usbmuxd -y
+  exit $?
+}
+
+install_using_brew() {
+  brew install usbmuxd
+  exit $?
+}
+
+install_using_git() {
+  local DIR=$(mktmp -d)
+
+  print_box "Cloning repository in TMP directory"
+  git clone https://github.com/libimobiledevice/usbmuxd.git $DIR/usbmuxd
+  cd $DIR/usbmuxd
+
+  print_box "Starting build"
+  ./autogen.sh
+  make
+
+  print_box "Starting installation"
+  sudo make install
+
+  exit $?
+}
+
+main

@@ -1,0 +1,46 @@
+#!/bin/sh
+
+set -e
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+UTILS="$SCRIPT_DIR/utils"
+source $UTILS
+
+main() {
+  elevate_priv
+  check_dependencies
+  # install_dependencies
+
+  print_box "Cloning repository in TMP directory"
+  DIR=$(mktemp -d)
+  git clone https://github.com/corellium/usbfluxd.git $DIR/usbfluxd
+  cd $DIR/usbfluxd
+
+  print_box "Starting build"
+  ./autogen.sh
+  make
+
+  print_box "Starting installation"
+  sudo make install
+
+  sudo cp /usr/local/sbin/usbfluxd /usr/local/bin/
+}
+
+install_macos_build_dependencies() {
+  brew install make automake autoconf libtool pkg-config gcc libimobiledevice libusbmuxd usbmuxd
+}
+
+check_dependencies() {
+  check_if_is_installed git
+  check_if_is_installed make
+  check_if_is_installed automake
+  check_if_is_installed autoconf
+  check_if_is_installed libtool
+  check_if_is_installed pkg-config
+  check_if_is_installed gcc
+  # check_if_is_installed libimobiledevice
+  # check_if_is_installed usbmuxd
+}
+
+main $1

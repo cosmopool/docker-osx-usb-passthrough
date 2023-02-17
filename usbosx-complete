@@ -1,0 +1,154 @@
+#!/bin/sh
+
+set -e
+
+# set this to workaround expr problems in shFlags on freebsd
+if uname -s | egrep -iq 'bsd'; then export EXPR_COMPAT=1; fi
+
+USBOSX_DIR="$(dirname "$(readlink -f "$0")")"
+
+. "$USBOSX_DIR/utils"
+
+main() {
+
+  # check_basic_dependencies
+  elevate_priv
+  show_usage_if_no_argument
+
+
+  # This environmental variable fixes non-POSIX getopt style argument
+  # parsing, effectively breaking git-flow subcommand parsing on several
+  # Linux platforms.
+  export POSIXLY_CORRECT=1
+
+  parse_arguments
+  # FLAGS_PARENT="usbosx"
+  # FLAGS "$@" || exit $?
+  # eval set -- "${FLAGS_ARGV}"
+
+  # sanity checks
+  SUBCOMMAND="$1"; shift
+  echo "SUBCOMMAND: '$SUBCOMMAND"
+  
+  # check_if_should_show_subcommand_usage
+  # run_command
+}
+
+parse_arguments() {
+  FLAGS_PARENT="usbosx"
+  FLAGS "$@" || exit $?
+  # eval set -- "${FLAGS_ARGV}"
+  # echo "ALL: "$@
+  # echo "argv: "$FLAGS_ARGV
+}
+
+run_command() {
+  . "$USBOSX_DIR/usbosx-$SUBCOMMAND"
+  FLAGS_PARENT="usbosx $SUBCOMMAND"
+
+  # test if the first argument is a flag (i.e. starts with '-')
+  # in that case, we interpret this arg as a flag for the default
+  # command
+  SUBACTION="default"
+  if [ "$1" != "" ] && { ! echo "$1" | grep -q "^-"; } then
+  	SUBACTION="$1"; shift
+  fi
+
+  if ! type "cmd_$SUBACTION" >/dev/null 2>&1; then
+  	warn "Unknown subcommand: '$SUBACTION'"
+  	usage
+  	exit 1
+  fi
+  
+  # run the specified action
+  if [ $SUBACTION != "help" ] && [ $SUBCOMMAND != "init" ] ; then
+    init
+  fi
+
+  echo "subaction: '$SUBACTION"
+
+  cmd_$SUBACTION "$@"
+}
+
+check_if_should_show_subcommand_usage() {
+  if [ ! -e "$USBOSX_DIR/usbosx-$SUBCOMMAND" ]; then
+  	usage
+  	exit 1
+  fi
+}
+
+show_usage_if_no_argument() {
+  if [ $# -lt 1 ]; then
+		usage
+		exit 1
+  fi
+
+  if ${FLAGS_show_help}; then
+		usage
+		exit 1
+  fi
+}
+
+usage() {
+	echo "usage: usbosx <subcommand>"
+	echo
+	echo "Available subcommands are:"
+	echo "   run       Run the process in the host"
+	echo "   restart   Restart the process in the host"
+	echo "   connect   Try to connect to an host"
+	echo
+	echo "Try 'usbosx <subcommand> help' for details."
+}
+
+check_basic_dependencies() {
+  check_if_is_installed readlink
+  check_if_is_installed dirname
+  check_if_is_installed systemctl
+  check_if_is_installed git
+  check_if_is_installed sudo
+}
+
+run_on_host() {
+  check_if_is_installed usbmuxd
+  check_if_is_installed socat
+  check_if_is_installed avahi
+
+  sudo systemctl start usbmuxd
+  sudo avahi-daemon
+  sudo systemctl restart usbmuxd
+  sudo socat tcp-listen:5000,fork unix-connect:/var/run/usbmuxd &
+  sudo usbfluxd -f -n
+}
+
+connect_to_host() {
+  check_if_is_installed usbmuxd
+  check_if_is_installed usbfluxd
+  check_if_is_installed libimobiledevice
+
+  sudo launchctl start usbmuxd
+  sudo usbfluxd -f -r 172.17.0.1:5000
+}
+
+stop_on_host() {
+  sudo killall usbfluxd
+  sudo systemctl restart usbmuxd
+  sudo killall socat
+  exit $?
+}
+
+install_dependencies_using_pacman() {
+  sudo pacman -S socat avahi usbmuxd libusbmuxd --noconfirm
+  return $?
+}
+
+install_dependencies_using_dnf() {
+  sudo apt -y install socat avahi usbmuxd libusbmuxd
+  return $?
+}
+
+install_dependencies_using_apt() {
+  sudo dnf -y install socat avahi usbmuxd libusbmuxd
+  return $?
+}
+
+main $@
