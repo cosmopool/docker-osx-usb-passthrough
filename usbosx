@@ -1,0 +1,108 @@
+#!/bin/sh
+
+set -e
+
+USBOSX_DIR="$(dirname "$(readlink -f "$0")")"
+USBOSX_UTILS=$USBOSX_DIR/utils
+source $USBOSX_UTILS
+
+main() {
+  check_basic_dependencies
+  elevate_priv
+
+  SUBCOMMAND="$1"; shift
+
+  case $SUBCOMMAND in
+    "run") run_on_host
+    ;;
+    "restart") 
+      stop_on_host
+      run_on_host
+    ;;
+    "connect") connect_to_host
+    ;;
+    "install-client") install_client_dependencies
+    ;;
+    "install-self") install_self
+    ;;
+    *) usage
+    ;;
+  esac
+}
+
+usage() {
+	echo "usage: usbosx <subcommand>"
+	echo
+	echo "Available subcommands are:"
+	echo "   run            Run the process in the host"
+	echo "   restart        Restart the process in the host"
+	echo "   connect        Try to connect to an host"
+	# echo "   install-host   Install all host dependencies"
+	echo "   install-client Install all client dependencies"
+	echo "   install-self   Install this script and export it to 'PATH'"
+	echo
+	echo "Try 'usbosx <subcommand> help' for details."
+}
+
+show_usage_if_no_argument() {
+  if [ $# -lt 1 ]; then
+		usage
+		exit 1
+  fi
+}
+
+check_basic_dependencies() {
+  check_if_is_installed readlink
+  check_if_is_installed dirname
+  check_if_is_installed git
+  check_if_is_installed sudo
+}
+
+run_on_host() {
+  # check_if_is_installed usbmuxd
+  check_if_is_installed socat
+  check_if_is_installed avahi
+  check_if_is_installed systemctl
+
+  sudo systemctl start usbmuxd
+  sudo avahi-daemon
+  sudo systemctl restart usbmuxd
+  sudo socat tcp-listen:5000,fork unix-connect:/var/run/usbmuxd &
+  sudo usbfluxd -f -n
+}
+
+connect_to_host() {
+  # check_if_is_installed usbmuxd
+  check_if_is_installed usbfluxd
+  # check_if_is_installed libimobiledevice
+
+  sudo launchctl start usbmuxd
+  sudo usbfluxd -f -r 172.17.0.1:5000
+}
+
+stop_on_host() {
+  check_if_is_installed systemctl
+
+  sudo killall usbfluxd
+  sudo systemctl restart usbmuxd
+  sudo killall socat
+  exit $?
+}
+
+install_client_dependencies() {
+  brew install make automake autoconf libtool pkg-config gcc libimobiledevice usbmuxd
+
+  if ! has usbfluxd; then
+    /bin/sh $USBOSX_DIR/usbosx-install-usbfluxd
+  fi
+}
+
+install_self() {
+  local BIN=$HOME/.local/bin
+  mkdir -p $BIN
+  cp $0 $BIN
+  cp $USBOSX_UTILS $BIN
+  export_to_path $BIN
+}
+
+main $@
